@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Финансовый трекер</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f7f7f5;
+    --bg2: #ffffff;
+    --bg3: #f0efec;
+    --text: #1a1a1a;
+    --text2: #6b6b6b;
+    --border: #e0ddd8;
+    --green: #1D9E75;
+    --red: #D85A30;
+    --orange: #E8930A;
+    --blue: #3B7BF5;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .container { max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 1.75rem; }
+
+  /* TABS */
+  .tabs { display: flex; gap: 6px; margin-bottom: 1.75rem; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+  .tab { padding: 8px 16px; font-size: 14px; background: none; border: none; cursor: pointer; color: var(--text2); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* CARDS */
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; }
+  .card-title { font-size: 13px; color: var(--text2); margin-bottom: 1rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  /* SUMMARY GRID */
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 1rem; }
+  .metric { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.25rem; }
+  .metric-label { font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+  .metric-value { font-size: 20px; font-weight: 600; }
+  .green { color: var(--green); }
+  .red { color: var(--red); }
+  .orange { color: var(--orange); }
+  .blue { color: var(--blue); }
+
+  /* PLANNING SECTION */
+  .plan-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .plan-field label { font-size: 13px; color: var(--text2); display: block; margin-bottom: 6px; }
+  .plan-field input { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 15px; background: var(--bg); }
+  .plan-field input:focus { outline: 2px solid var(--blue); }
+  .plan-hint { font-size: 12px; color: var(--text2); margin-top: 6px; }
+
+  /* FIXED EXPENSES */
+  .fixed-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .fixed-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg3); border-radius: var(--radius-sm); }
+  .fixed-item-name { flex: 1; font-size: 14px; }
+  .fixed-item-amt { font-size: 14px; font-weight: 500; color: var(--red); }
+  .fixed-del { background: none; border: none; cursor: pointer; color: var(--text2); font-size: 18px; line-height: 1; padding: 0 2px; }
+  .fixed-del:hover { color: var(--red); }
+  .fixed-add-form { display: grid; grid-template-columns: 1fr 120px auto; gap: 8px; }
+  .fixed-add-form input { padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; background: var(--bg); }
+
+  /* BUTTONS */
+  .btn { padding: 8px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg2); cursor: pointer; font-size: 14px; color: var(--text); }
+  .btn:hover { background: var(--bg3); }
+  .btn-primary { background: var(--text); color: #fff; border-color: var(--text); }
+  .btn-primary:hover { opacity: 0.85; }
+
+  /* MONTH NAV */
+  .month-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 1.25rem; }
+  .month-title { font-size: 17px; font-weight: 600; flex: 1; }
+  .nav-btn { width: 34px; height: 34px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg2); cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+  .nav-btn:hover { background: var(--bg3); }
+
+  /* CHART */
+  .chart-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; }
+  .chart-inner { position: relative; height: 160px; }
+
+  /* DAY ROWS */
+  .day-row { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 6px; overflow: hidden; background: var(--bg2); }
+  .day-header { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; }
+  .day-header:hover { background: var(--bg3); }
+  .day-num { font-size: 13px; font-weight: 600; width: 26px; color: var(--text2); }
+  .day-num.today { color: var(--green); }
+  .day-wd { font-size: 12px; color: var(--text2); width: 28px; }
+  .day-sum { flex: 1; display: flex; gap: 10px; font-size: 12px; color: var(--text2); flex-wrap: wrap; }
+  .day-chev { font-size: 13px; color: var(--text2); transition: transform 0.15s; }
+  .day-chev.open { transform: rotate(180deg); }
+  .day-body { display: none; border-top: 1px solid var(--border); padding: 10px 14px; }
+  .day-body.open { display: block; }
+  .entry-list { margin-bottom: 10px; }
+  .entry-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .entry-row:last-child { border-bottom: none; }
+  .entry-cat { font-size: 12px; color: var(--text2); width: 88px; flex-shrink: 0; }
+  .entry-desc { font-size: 13px; flex: 1; }
+  .entry-amt { font-size: 13px; font-weight: 500; }
+  .entry-del { background: none; border: none; cursor: pointer; color: var(--text2); font-size: 16px; padding: 2px 4px; }
+  .entry-del:hover { color: var(--red); }
+  .add-form { display: grid; grid-template-columns: 1fr 90px 1fr 90px auto; gap: 6px; margin-top: 8px; }
+  .add-form input, .add-form select { padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; background: var(--bg); }
+  .empty-msg { font-size: 12px; color: var(--text2); padding: 4px 0 8px; }
+
+  /* AUTH SCREEN */
+  #authScreen { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .auth-box { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 2rem; width: 100%; max-width: 360px; }
+  .auth-box h2 { font-size: 18px; font-weight: 600; margin-bottom: 1.5rem; }
+  .auth-field { margin-bottom: 12px; }
+  .auth-field label { font-size: 13px; color: var(--text2); display: block; margin-bottom: 5px; }
+  .auth-field input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 15px; background: var(--bg); }
+  .auth-field input:focus { outline: 2px solid var(--blue); }
+  .auth-btns { display: flex; gap: 8px; margin-top: 1rem; }
+  .auth-error { font-size: 12px; color: var(--red); margin-top: 10px; min-height: 16px; }
+  .auth-hint { font-size: 12px; color: var(--text2); margin-top: 10px; }
+  #logoutBtn { font-size: 13px; color: var(--text2); background: none; border: none; cursor: pointer; padding: 0; }
+  #logoutBtn:hover { color: var(--red); }
+
+  /* OVER LIMIT DAY */
+  .day-row.over-limit > .day-header { background: rgba(216,90,48,0.07); }
+  .day-row.over-limit > .day-header:hover { background: rgba(216,90,48,0.13); }
+  .over-limit-badge { font-size: 11px; color: var(--red); font-weight: 500; }
+
+  /* DIFF INDICATOR */
+  .diff-bar { height: 8px; background: var(--bg3); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+  .diff-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
+
+  /* SAVINGS */
+  .snap-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .snap-row:last-child { border-bottom:none; }
+  .snap-date { color:var(--text2); width:90px; flex-shrink:0; }
+  .snap-total { font-weight:600; flex:1; }
+  .snap-diff { font-size:12px; width:80px; text-align:right; }
+  .snap-del { background:none; border:none; cursor:pointer; color:var(--text2); font-size:15px; padding:2px 4px; }
+  .snap-del:hover { color:var(--red); }
+  .snap-details { font-size:11px; color:var(--text2); display:flex; flex-wrap:wrap; gap:6px; padding:4px 0 6px 90px; border-bottom:1px solid var(--border); }
+  .snap-detail-item { background:var(--bg3); border-radius:4px; padding:2px 6px; }
+
+    .add-form { grid-template-columns: 1fr 1fr; }
+    .add-form button { grid-column: span 2; }
+    .plan-grid { grid-template-columns: 1fr; }
+    .fixed-add-form { grid-template-columns: 1fr auto; }
+    .fixed-add-form input:nth-child(2) { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="authScreen">
+  <div class="auth-box">
+    <h2>💰 Финансовый трекер</h2>
+    <div class="auth-field">
+      <label>Email</label>
+      <input type="email" id="authEmail" placeholder="you@example.com" />
+    </div>
+    <div class="auth-field">
+      <label>Пароль</label>
+      <input type="password" id="authPassword" placeholder="••••••••" onkeydown="if(event.key==='Enter')signIn()" />
+    </div>
+    <div class="auth-btns">
+      <button class="btn btn-primary" onclick="signIn()">Войти</button>
+      <button class="btn" onclick="signUp()">Зарегистрироваться</button>
+    </div>
+    <p class="auth-error" id="authError"></p>
+    <p class="auth-hint">Новый пользователь — введи email и пароль, нажми «Зарегистрироваться». Вход — сразу после регистрации.</p>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+<div class="container">
+  <h1>💰 Финансовый трекер &nbsp;<button id="logoutBtn" onclick="signOut()">Выйти</button></h1>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('overview')">Обзор</button>
+    <button class="tab" onclick="switchTab('calendar')">Дневник трат</button>
+    <button class="tab" onclick="switchTab('planning')">Планирование</button>
+    <button class="tab" onclick="switchTab('savings')">Сбережения</button>
+  </div>
+
+  <!-- OVERVIEW TAB -->
+  <div id="tab-overview" class="tab-content active">
+    <div class="summary-grid" id="summaryGrid"></div>
+    <div class="chart-wrap">
+      <div class="card-title">Расходы по дням</div>
+      <div class="chart-inner"><canvas id="expChart"></canvas></div>
+    </div>
+    <div id="overviewPlanBlock"></div>
+  </div>
+
+  <!-- CALENDAR TAB -->
+  <div id="tab-calendar" class="tab-content">
+    <div class="month-nav">
+      <button class="nav-btn" onclick="changeMonth(-1)">&#8249;</button>
+      <span class="month-title" id="monthTitle"></span>
+      <button class="nav-btn" onclick="changeMonth(1)">&#8250;</button>
+    </div>
+    <div id="daysList"></div>
+  </div>
+
+  <!-- SAVINGS TAB -->
+  <div id="tab-savings" class="tab-content">
+
+    <!-- Total net worth -->
+    <div class="summary-grid" id="savSummary"></div>
+
+    <!-- Chart -->
+    <div class="chart-wrap" style="margin-bottom:1rem">
+      <div class="card-title">История капитала</div>
+      <div class="chart-inner" style="height:200px"><canvas id="savChart"></canvas></div>
+    </div>
+
+    <!-- Snapshot form -->
+    <div class="card">
+      <div class="card-title">Зафиксировать текущее состояние</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="savFields">
+        <div class="plan-field">
+          <label>🏦 Банковская карта (₽)</label>
+          <input type="text" id="sf_card" placeholder="0 или 10000+5000" onblur="evalSavField('sf_card')" oninput="updateSnapTotal()" />
+        </div>
+        <div class="plan-field">
+          <label>💵 Наличные (₽)</label>
+          <input type="text" id="sf_cash" placeholder="0 или 1000+500" onblur="evalSavField('sf_cash')" oninput="updateSnapTotal()" />
+        </div>
+        <div class="plan-field">
+          <label>💱 Валюта — сумма в $</label>
+          <input type="text" id="sf_usd_amt" placeholder="0 или 100+50" oninput="calcUsd()" onblur="evalSavField('sf_usd_amt'); calcUsd()" />
+        </div>
+        <div class="plan-field">
+          <label>Курс $ → ₽ <span id="usdRateLabel" style="color:var(--blue);font-size:11px"></span></label>
+          <input type="text" id="sf_usd_rate" placeholder="загружаю..." oninput="calcUsd()" />
+          <p class="plan-hint" id="usdCalc"></p>
+        </div>
+        <div class="plan-field">
+          <label>🏦 Вклад / депозит (₽)</label>
+          <input type="text" id="sf_deposit" placeholder="0" onblur="evalSavField('sf_deposit')" oninput="updateSnapTotal()" />
+        </div>
+        <div class="plan-field">
+          <label>📤 Долги (мне должны, ₽)</label>
+          <input type="text" id="sf_owedtome" placeholder="0" onblur="evalSavField('sf_owedtome')" oninput="updateSnapTotal()" />
+        </div>
+        <div class="plan-field">
+          <label>📥 Мои долги (₽)</label>
+          <input type="text" id="sf_iowe" placeholder="0" onblur="evalSavField('sf_iowe')" oninput="updateSnapTotal()" />
+        </div>
+        <div class="plan-field">
+          <label>📝 Прочее (₽)</label>
+          <input type="text" id="sf_other" placeholder="0" onblur="evalSavField('sf_other')" oninput="updateSnapTotal()" />
+        </div>
+      </div>
+      <div style="margin-top:1rem;display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" onclick="saveSnapshot()">📸 Зафиксировать</button>
+        <span style="font-size:12px;color:var(--text2)">Итого: <b id="snapTotal">—</b></span>
+      </div>
+    </div>
+
+    <!-- Snapshot history -->
+    <div class="card">
+      <div class="card-title">История снимков</div>
+      <div id="savHistory"></div>
+    </div>
+  </div>
+
+  <div id="tab-planning" class="tab-content">
+    <div class="card">
+      <div class="card-title">Бюджет и цель</div>
+      <div class="plan-grid">
+        <div class="plan-field">
+          <label>Бюджет на месяц (₽)</label>
+          <input type="text" id="planIncome" placeholder="например 150000" oninput="savePlan()" onblur="evalPlanField('planIncome')" />
+        </div>
+        <div class="plan-field">
+          <label>Цель по накоплению в месяц (₽)</label>
+          <input type="text" id="planBudget" placeholder="например 30000" oninput="savePlan()" onblur="evalPlanField('planBudget')" />
+          <p class="plan-hint" id="dailyHint"></p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Обязательные расходы</div>
+      <div class="fixed-list" id="fixedList"></div>
+      <div class="fixed-add-form">
+        <input type="text" id="fixedName" placeholder="Название (КУ, телефон...)" />
+        <input type="number" id="fixedAmt" placeholder="Сумма" min="0" />
+        <button class="btn btn-primary" onclick="addFixed()">+ Добавить</button>
+      </div>
+      <p class="plan-hint" style="margin-top:10px" id="fixedTotal"></p>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+const MONTHS = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const DAYS_W = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+const CATS = ['Еда','Транспорт','Развлечения','Вкусности','Здоровье','Спорт','Другое'];
+
+const now = new Date();
+let curYear = now.getFullYear(), curMonth = now.getMonth();
+const todayD = now.getDate(), todayM = now.getMonth(), todayY = now.getFullYear();
+let openDays = new Set();
+let chart = null;
+
+// SUPABASE
+const SUPABASE_URL = 'https://ozdwnxzusfnnzasvynob.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96ZHdueHp1c2Zubnphc3Z5bm9iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI3NDc1MDMsImV4cCI6MjA5ODMyMzUwM30.NlvJkiTePFv_QXEmafPwTEJ2EATnPT4S9rFrs3hSxG0';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let currentUser = null;
+let saveTimer = null;
+
+// STATE
+let state = { data: {}, plan: { income: '', budget: '' }, fixed: [], snapshots: [] };
+
+async function loadState() {
+  const { data } = await sb.from('user_data').select('state').eq('user_id', currentUser.id).single();
+  if (data && data.state) {
+    state = data.state;
+    if (!state.data) state.data = {};
+    if (!state.plan) state.plan = { income: '', budget: '' };
+    if (!state.fixed) state.fixed = [];
+    if (!state.snapshots) state.snapshots = [];
+  }
+}
+
+function saveState(s) {
+  state = s;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    sb.from('user_data').upsert({ user_id: currentUser.id, state: s }, { onConflict: 'user_id' });
+  }, 600);
+}
+
+// AUTH
+async function signIn() {
+  const email = document.getElementById('authEmail').value.trim().toLowerCase();
+  const password = document.getElementById('authPassword').value;
+  const err = document.getElementById('authError');
+  err.style.color = 'var(--red)';
+  err.textContent = 'Вхожу...';
+  const { error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) err.textContent = 'Неверный email или пароль';
+  else err.textContent = '';
+}
+
+async function signUp() {
+  const email = document.getElementById('authEmail').value.trim().toLowerCase();
+  const password = document.getElementById('authPassword').value;
+  const err = document.getElementById('authError');
+  err.style.color = 'var(--red)';
+  if (password.length < 6) { err.textContent = 'Пароль минимум 6 символов'; return; }
+  const { error } = await sb.auth.signUp({ email, password });
+  if (error) err.textContent = error.message;
+}
+
+async function signOut() {
+  await sb.auth.signOut();
+}
+
+sb.auth.onAuthStateChange((event, session) => {
+  // ВАЖНО: не делаем await к базе прямо здесь — иначе deadlock блокировки Supabase.
+  // Откладываем работу через setTimeout, чтобы обработчик успел освободить блокировку.
+  if (session) {
+    currentUser = session.user;
+    setTimeout(async () => {
+      await loadState();
+      document.getElementById('authError').textContent = '';
+      document.getElementById('authScreen').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      renderOverview();
+      renderCalendar();
+    }, 0);
+  } else {
+    currentUser = null;
+    state = { data: {}, plan: { income: '', budget: '' }, fixed: [], snapshots: [] };
+    document.getElementById('authScreen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+  }
+});
+
+function key(y, m, d) { return `${y}-${m}-${d}`; }
+function fmt(n) { return Math.abs(Math.round(n)).toLocaleString('ru-RU') + ' ₽'; }
+function getDays(y, m) { return new Date(y, m + 1, 0).getDate(); }
+
+// TABS
+function switchTab(t) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + t).classList.add('active');
+  event.target.classList.add('active');
+  if (t === 'overview') renderOverview();
+  if (t === 'calendar') renderCalendar();
+  if (t === 'planning') renderPlanning();
+  if (t === 'savings') { renderSavings(); fetchUsdRate(); }
+}
+
+// PLAN
+function savePlan() {
+  state.plan.income = document.getElementById('planIncome').value;
+  state.plan.budget = document.getElementById('planBudget').value;
+  saveState(state);
+  updateDailyHint();
+}
+function updateDailyHint() {
+  const income = parseFloat(state.plan.income) || 0;
+  const savings = parseFloat(state.plan.budget) || 0;
+  const fixedTotal = state.fixed.reduce((s, f) => s + f.amt, 0);
+  const days = getDays(curYear, curMonth);
+  const h = document.getElementById('dailyHint');
+  if (h && income > 0 && savings >= 0) {
+    const spendable = income - fixedTotal - savings;
+    if (spendable > 0) h.textContent = `Можно тратить: ${fmt(spendable)} / мес · ${fmt(spendable / days)} / день`;
+    else if (spendable <= 0) h.textContent = `⚠️ Цель накопления превышает доход за вычетом обязательных`;
+  } else if (h) h.textContent = '';
+}
+
+// FIXED
+function addFixed() {
+  const name = document.getElementById('fixedName').value.trim();
+  const amt = parseFloat(document.getElementById('fixedAmt').value);
+  if (!name || isNaN(amt) || amt <= 0) return;
+  state.fixed.push({ name, amt: Math.round(amt) });
+  saveState(state);
+  document.getElementById('fixedName').value = '';
+  document.getElementById('fixedAmt').value = '';
+  renderPlanning();
+}
+function deleteFixed(i) {
+  state.fixed.splice(i, 1);
+  saveState(state);
+  renderPlanning();
+}
+
+function renderPlanning() {
+  document.getElementById('planIncome').value = state.plan.income;
+  document.getElementById('planBudget').value = state.plan.budget;
+  updateDailyHint();
+  const list = document.getElementById('fixedList');
+  if (state.fixed.length === 0) {
+    list.innerHTML = '<p class="empty-msg">Нет обязательных расходов</p>';
+  } else {
+    list.innerHTML = state.fixed.map((f, i) => `
+      <div class="fixed-item">
+        <span class="fixed-item-name">${f.name}</span>
+        <span class="fixed-item-amt">−${fmt(f.amt)}</span>
+        <button class="fixed-del" onclick="deleteFixed(${i})">×</button>
+      </div>`).join('');
+  }
+  const total = state.fixed.reduce((s, f) => s + f.amt, 0);
+  document.getElementById('fixedTotal').textContent = total > 0 ? `Итого обязательных: ${fmt(total)} в месяц` : '';
+}
+
+// ENTRIES
+function addEntry(y, m, d) {
+  const descRaw = document.getElementById(`desc-${d}`).value.trim();
+  const amtRaw = document.getElementById(`amt-${d}`).value;
+  const amt = evalExpr(amtRaw);
+  const cat = document.getElementById(`cat-${d}`).value;
+  const type = document.getElementById(`type-${d}`).value;
+  if (!amt || amt <= 0) return;
+  const desc = descRaw || cat;
+  const k = key(y, m, d);
+  if (!state.data[k]) state.data[k] = [];
+  state.data[k].push({ desc, amt: Math.round(amt), cat, type });
+  saveState(state);
+  document.getElementById(`desc-${d}`).value = '';
+  document.getElementById(`amt-${d}`).value = '';
+  openDays.add(d);
+  renderCalendar();
+  renderOverview();
+}
+function deleteEntry(y, m, d, i) {
+  const k = key(y, m, d);
+  state.data[k].splice(i, 1);
+  saveState(state);
+  openDays.add(d);
+  renderCalendar();
+  renderOverview();
+}
+
+// MONTHLY TOTALS
+function monthTotals(y, m) {
+  let inc = 0, exp = 0;
+  const days = getDays(y, m);
+  for (let d = 1; d <= days; d++) {
+    (state.data[key(y, m, d)] || []).forEach(e => {
+      if (e.type === 'income') inc += e.amt; else exp += e.amt;
+    });
+  }
+  return { inc, exp };
+}
+
+// DAILY LIMIT HELPER
+function getDailyLimit(y, m) {
+  const income = parseFloat(state.plan.income) || 0;
+  const savings = parseFloat(state.plan.budget) || 0;
+  const fixedTotal = state.fixed.reduce((s, f) => s + f.amt, 0);
+  const days = getDays(y, m);
+  const spendable = (income > 0 && savings >= 0) ? Math.max(0, income - fixedTotal - savings) : 0;
+  if (spendable <= 0) return 0;
+  const isCurrentMonth = (y === todayY && m === todayM);
+  if (isCurrentMonth) {
+    let spentSoFar = 0;
+    for (let d = 1; d <= todayD; d++) {
+      spentSoFar += (state.data[key(y, m, d)] || []).filter(e => e.type === 'expense').reduce((s, e) => s + e.amt, 0);
+    }
+    const remaining = spendable - spentSoFar;
+    const daysLeft = days - todayD;
+    return daysLeft > 0 ? remaining / daysLeft : 0;
+  }
+  return spendable / days;
+}
+
+// OVERVIEW
+function renderOverview() {
+  const y = curYear, m = curMonth;
+  const { inc, exp } = monthTotals(y, m);
+  const income = parseFloat(state.plan.income) || 0;
+  const savings = parseFloat(state.plan.budget) || 0;
+  const fixedTotal = state.fixed.reduce((s, f) => s + f.amt, 0);
+  const days = getDays(y, m);
+  const spendable = (income > 0 && savings >= 0) ? Math.max(0, income - fixedTotal - savings) : 0;
+
+  const isCurrentMonth = (y === todayY && m === todayM);
+  let dailyLimit = 0, dailyLimitLabel = 'Ориентир в день', dailyLimitNote = '';
+  if (spendable > 0) {
+    dailyLimit = getDailyLimit(y, m);
+    const staticLimit = spendable / days;
+    if (isCurrentMonth) {
+      const daysLeft = days - todayD;
+      dailyLimitLabel = `Ориентир в день (осталось ${daysLeft} дн.)`;
+      const diff = dailyLimit - staticLimit;
+      if (Math.abs(diff) > 1) {
+        dailyLimitNote = diff > 0
+          ? `+${fmt(Math.abs(diff))} к плану — хороший темп 🟢`
+          : `−${fmt(Math.abs(diff))} к плану — перерасход 🔴`;
+      } else {
+        dailyLimitNote = 'Точно по плану 🟡';
+      }
+    }
+  }
+
+  const metrics = [
+    { label: 'Расходы за месяц', value: fmt(exp), cls: 'red' },
+    { label: 'Доходы (фактические)', value: fmt(inc), cls: 'green' },
+    { label: 'Баланс', value: (inc - exp >= 0 ? '' : '−') + fmt(Math.abs(inc - exp)), cls: inc - exp >= 0 ? 'green' : 'red' },
+  ];
+  if (income > 0) metrics.push({ label: 'Бюджет на месяц', value: fmt(income), cls: 'blue' });
+  if (fixedTotal > 0) metrics.push({ label: 'Обязательные расходы', value: fmt(fixedTotal), cls: 'orange' });
+  if (savings > 0) metrics.push({ label: 'Цель накопления', value: fmt(savings), cls: 'blue' });
+  if (spendable > 0) metrics.push({ label: 'Доступно на траты', value: fmt(spendable), cls: 'green' });
+  if (dailyLimit > 0) metrics.push({ label: dailyLimitLabel, value: fmt(Math.max(0, dailyLimit)), cls: dailyLimit > 0 ? (dailyLimit < spendable / days * 0.8 ? 'red' : 'blue') : 'red' });
+  if (spendable > 0) {
+    const left = spendable - exp;
+    metrics.push({ label: 'Осталось потратить', value: (left >= 0 ? '' : '−') + fmt(Math.abs(left)), cls: left >= 0 ? 'green' : 'red' });
+  }
+
+  document.getElementById('summaryGrid').innerHTML = metrics.map(mm =>
+    `<div class="metric"><div class="metric-label">${mm.label}</div><div class="metric-value ${mm.cls}">${mm.value}</div></div>`
+  ).join('');
+
+  // progress bar + dynamic note
+  let planBlock = '';
+  if (spendable > 0) {
+    const pct = Math.min(100, Math.round(exp / spendable * 100));
+    const color = pct < 75 ? 'var(--green)' : pct < 100 ? 'var(--orange)' : 'var(--red)';
+    planBlock = `<div class="card">
+      <div class="card-title">Прогресс трат от доступного бюджета</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+        <span>Потрачено: <b>${fmt(exp)}</b></span><span>Доступно: <b>${fmt(spendable)}</b></span>
+      </div>
+      <div class="diff-bar"><div class="diff-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <p style="font-size:12px;color:var(--text2);margin-top:6px">${pct}% бюджета использовано · цель накопить ${fmt(savings)}</p>
+      ${dailyLimitNote ? `<p style="font-size:12px;margin-top:4px">${dailyLimitNote}</p>` : ''}
+    </div>`;
+  }
+  document.getElementById('overviewPlanBlock').innerHTML = planBlock;
+
+  // Chart
+  const labels = [], values = [];
+  for (let d = 1; d <= days; d++) {
+    labels.push(d);
+    values.push((state.data[key(y, m, d)] || []).filter(e => e.type === 'expense').reduce((s, e) => s + e.amt, 0));
+  }
+  const ctx = document.getElementById('expChart');
+  if (chart) { chart.destroy(); chart = null; }
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: values.map(() => 'rgba(216,90,48,0.7)'),
+        borderRadius: 4,
+        borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmt(c.parsed.y) } } },
+      scales: {
+        x: { ticks: { font: { size: 11 }, color: '#888', autoSkip: true, maxTicksLimit: 16 }, grid: { display: false } },
+        y: { ticks: { font: { size: 11 }, color: '#888', callback: v => v >= 1000 ? Math.round(v/1000)+'к' : v }, grid: { color: 'rgba(0,0,0,0.05)' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+// CALENDAR
+function changeMonth(dir) {
+  curMonth += dir;
+  if (curMonth < 0) { curMonth = 11; curYear--; }
+  if (curMonth > 11) { curMonth = 0; curYear++; }
+  openDays.clear();
+  renderCalendar();
+  renderOverview();
+}
+function toggleDay(d) {
+  if (openDays.has(d)) openDays.delete(d);
+  else { openDays.add(d); setTimeout(() => { const el = document.getElementById(`desc-${d}`); if (el) el.focus(); }, 50); }
+  renderCalendar();
+}
+function renderCalendar() {
+  const y = curYear, m = curMonth;
+  document.getElementById('monthTitle').textContent = `${MONTHS[m]} ${y}`;
+  const days = getDays(y, m);
+  const dailyLimitForMonth = (() => {
+    const income = parseFloat(state.plan.income) || 0;
+    const savings = parseFloat(state.plan.budget) || 0;
+    const fixedTotal = state.fixed.reduce((s, f) => s + f.amt, 0);
+    const spendable = (income > 0 && savings >= 0) ? Math.max(0, income - fixedTotal - savings) : 0;
+    return spendable > 0 ? spendable / days : 0;
+  })();
+  let html = '';
+  for (let d = 1; d <= days; d++) {
+    const entries = state.data[key(y, m, d)] || [];
+    const dayInc = entries.filter(e => e.type === 'income').reduce((s, e) => s + e.amt, 0);
+    const dayExp = entries.filter(e => e.type === 'expense').reduce((s, e) => s + e.amt, 0);
+    const isToday = d === todayD && m === todayM && y === todayY;
+    const isOpen = openDays.has(d);
+    const wd = DAYS_W[new Date(y, m, d).getDay()];
+    const isPast = y < todayY || (y === todayY && m < todayM) || (y === todayY && m === todayM && d <= todayD);
+    const isOverLimit = dailyLimitForMonth > 0 && dayExp > dailyLimitForMonth && isPast && dayExp > 0;
+    const overAmt = isOverLimit ? dayExp - dailyLimitForMonth : 0;
+    const sumHtml = entries.length
+      ? (dayInc > 0 ? `<span style="color:var(--green)">+${fmt(dayInc)}</span>` : '') +
+        (dayExp > 0 ? `<span style="color:var(--red)">−${fmt(dayExp)}</span>` : '') +
+        `<span>${entries.length} зап.</span>` +
+        (isOverLimit ? `<span class="over-limit-badge">+${fmt(overAmt)} к норме</span>` : '')
+      : '<span>нет записей</span>';
+    const entriesHtml = entries.length
+      ? '<div class="entry-list">' + entries.map((e, i) => `
+          <div class="entry-row">
+            <span class="entry-cat">${e.cat}</span>
+            <span class="entry-desc">${e.desc}</span>
+            <span class="entry-amt ${e.type === 'income' ? 'green' : 'red'}">${e.type === 'income' ? '+' : '−'}${fmt(e.amt)}</span>
+            <button class="entry-del" onclick="deleteEntry(${y},${m},${d},${i})">×</button>
+          </div>`).join('') + '</div>'
+      : '<p class="empty-msg">Нет записей за этот день</p>';
+
+    html += `<div class="day-row${isOverLimit ? ' over-limit' : ''}">
+      <div class="day-header" onclick="toggleDay(${d})">
+        <span class="day-num${isToday ? ' today' : ''}">${d}</span>
+        <span class="day-wd">${wd}</span>
+        <div class="day-sum">${sumHtml}</div>
+        <span class="day-chev${isOpen ? ' open' : ''}">▾</span>
+      </div>
+      <div class="day-body${isOpen ? ' open' : ''}">
+        ${entriesHtml}
+        <div class="add-form">
+          <input id="desc-${d}" type="text" placeholder="Название (необязательно)" onkeydown="if(event.key==='Enter')addEntry(${y},${m},${d})" />
+          <input id="amt-${d}" type="text" placeholder="Сумма или 100+200" onkeydown="if(event.key==='Enter')addEntry(${y},${m},${d})" />
+          <select id="cat-${d}">${CATS.map(c => `<option>${c}</option>`).join('')}</select>
+          <select id="type-${d}"><option value="expense">Расход</option><option value="income">Доход</option></select>
+          <button class="btn btn-primary" onclick="addEntry(${y},${m},${d})">+ Добавить</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  document.getElementById('daysList').innerHTML = html;
+}
+
+
+// ── SAVINGS ──────────────────────────────────────────────
+let savChart = null;
+
+const SAV_FIELDS = [
+  { id:'card',      label:'Карта' },
+  { id:'cash',      label:'Наличные' },
+  { id:'usd',       label:'Валюта (₽)' },
+  { id:'deposit',   label:'Вклад' },
+  { id:'owedtome',  label:'Долги мне' },
+  { id:'iowe',      label:'Мои долги', negative:true },
+  { id:'other',     label:'Прочее' },
+];
+
+// ── CALC HELPER: evaluate math expressions in fields ──
+function evalExpr(val) {
+  try {
+    const clean = val.replace(/[^0-9+\-*/().]/g, '');
+    if (!clean) return 0;
+    const result = Function('"use strict"; return (' + clean + ')')();
+    return isFinite(result) ? Math.round(result) : 0;
+  } catch { return 0; }
+}
+function evalSavField(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const val = evalExpr(el.value);
+  el.value = val || '';
+  updateSnapTotal();
+}
+function evalPlanField(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const val = evalExpr(el.value);
+  if (val > 0) el.value = val;
+  savePlan();
+}
+
+async function fetchUsdRate() {
+  try {
+    const r = await fetch('https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json');
+    const d = await r.json();
+    const rate = Math.round(d.usd.rub);
+    document.getElementById('sf_usd_rate').value = rate;
+    document.getElementById('usdRateLabel').textContent = `≈ ${rate} ₽ (ЦБ)`;
+    calcUsd();
+  } catch {
+    document.getElementById('sf_usd_rate').placeholder = 'введите вручную';
+  }
+}
+
+function calcUsd() {
+  const amt = parseFloat(document.getElementById('sf_usd_amt').value) || 0;
+  const rate = parseFloat(document.getElementById('sf_usd_rate').value) || 0;
+  const rub = Math.round(amt * rate);
+  document.getElementById('usdCalc').textContent = amt > 0 && rate > 0 ? `= ${fmt(rub)}` : '';
+  updateSnapTotal();
+}
+
+function updateSnapTotal() {
+  let total = 0;
+  const usdAmt = parseFloat(document.getElementById('sf_usd_amt').value) || 0;
+  const usdRate = parseFloat(document.getElementById('sf_usd_rate').value) || 0;
+  SAV_FIELDS.forEach(f => {
+    let val;
+    if (f.id === 'usd') val = Math.round(usdAmt * usdRate);
+    else val = parseFloat(document.getElementById('sf_' + f.id).value) || 0;
+    total += f.negative ? -val : val;
+  });
+  document.getElementById('snapTotal').textContent = fmt(total);
+}
+
+// attach live listeners
+setTimeout(() => {
+  SAV_FIELDS.forEach(f => {
+    const el = document.getElementById('sf_' + (f.id === 'usd' ? 'usd_amt' : f.id));
+    if (el) el.addEventListener('input', updateSnapTotal);
+  });
+}, 200);
+
+function saveSnapshot() {
+  const usdAmt = parseFloat(document.getElementById('sf_usd_amt').value) || 0;
+  const usdRate = parseFloat(document.getElementById('sf_usd_rate').value) || 0;
+  const snap = { date: new Date().toISOString().slice(0,10), fields: {}, usd_amt: usdAmt, usd_rate: usdRate };
+  let total = 0;
+  SAV_FIELDS.forEach(f => {
+    let val;
+    if (f.id === 'usd') val = Math.round(usdAmt * usdRate);
+    else val = parseFloat(document.getElementById('sf_' + f.id).value) || 0;
+    snap.fields[f.id] = val;
+    total += f.negative ? -val : val;
+  });
+  snap.total = total;
+  // replace if same date
+  const idx = state.snapshots.findIndex(s => s.date === snap.date);
+  if (idx >= 0) state.snapshots[idx] = snap; else state.snapshots.push(snap);
+  state.snapshots.sort((a,b) => a.date.localeCompare(b.date));
+  saveState(state);
+  renderSavings();
+}
+
+function deleteSnapshot(date) {
+  state.snapshots = state.snapshots.filter(s => s.date !== date);
+  saveState(state);
+  renderSavings();
+}
+
+function renderSavings() {
+  // summary — latest snapshot
+  const last = state.snapshots[state.snapshots.length - 1];
+  const prev = state.snapshots[state.snapshots.length - 2];
+  const summaryEl = document.getElementById('savSummary');
+  if (last) {
+    const diff = prev ? last.total - prev.total : null;
+    const metrics = [
+      { label:'Чистый капитал', value: fmt(last.total), cls: last.total >= 0 ? 'green' : 'red' },
+    ];
+    if (diff !== null) metrics.push({ label:'Изменение', value:(diff>=0?'+':'−')+fmt(Math.abs(diff)), cls:diff>=0?'green':'red' });
+    SAV_FIELDS.filter(f=>!f.negative).forEach(f => {
+      if (last.fields[f.id] > 0) metrics.push({ label:f.label, value:fmt(last.fields[f.id]), cls:'blue' });
+    });
+    const iowe = last.fields['iowe'] || 0;
+    if (iowe > 0) metrics.push({ label:'Мои долги', value:fmt(iowe), cls:'red' });
+    summaryEl.innerHTML = metrics.map(m =>
+      `<div class="metric"><div class="metric-label">${m.label}</div><div class="metric-value ${m.cls}">${m.value}</div></div>`
+    ).join('');
+  } else {
+    summaryEl.innerHTML = '<p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Зафикисируй первый снимок — появится сводка</p>';
+  }
+
+  // chart
+  const ctx = document.getElementById('savChart');
+  if (savChart) { savChart.destroy(); savChart = null; }
+  if (state.snapshots.length > 0) {
+    savChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: state.snapshots.map(s => s.date.slice(5)),
+        datasets: [{
+          data: state.snapshots.map(s => s.total),
+          borderColor: '#1D9E75',
+          backgroundColor: 'rgba(29,158,117,0.08)',
+          borderWidth: 2,
+          pointRadius: 5,
+          pointBackgroundColor: '#1D9E75',
+          tension: 0.3,
+          fill: true
+        }]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label: c => fmt(c.parsed.y) } } },
+        scales:{
+          x:{ ticks:{ font:{size:11}, color:'#888' }, grid:{display:false} },
+          y:{ ticks:{ font:{size:11}, color:'#888', callback: v => v>=1000?Math.round(v/1000)+'к':v }, grid:{color:'rgba(0,0,0,0.05)'}, beginAtZero:false }
+        }
+      }
+    });
+  }
+
+  // history list
+  const histEl = document.getElementById('savHistory');
+  if (state.snapshots.length === 0) {
+    histEl.innerHTML = '<p class="empty-msg">Нет снимков. Заполни форму выше и нажми «Зафиксировать».</p>';
+    return;
+  }
+  histEl.innerHTML = [...state.snapshots].reverse().map((s, ri) => {
+    const prevS = state.snapshots[state.snapshots.length - 2 - ri];
+    const diff = prevS ? s.total - prevS.total : null;
+    const diffHtml = diff !== null
+      ? `<span class="snap-diff ${diff>=0?'green':'red'}">${diff>=0?'+':'−'}${fmt(Math.abs(diff))}</span>`
+      : '<span class="snap-diff" style="color:var(--text2)">первый</span>';
+    const details = SAV_FIELDS
+      .filter(f => s.fields[f.id] > 0)
+      .map(f => {
+        let label = f.label;
+        if (f.id === 'usd' && s.usd_amt) label = `Валюта $${s.usd_amt} × ${s.usd_rate}`;
+        return `<span class="snap-detail-item">${label}: ${f.negative?'−':''}${fmt(s.fields[f.id])}</span>`;
+      }).join('');
+    return `
+      <div class="snap-row">
+        <span class="snap-date">${s.date}</span>
+        <span class="snap-total ${s.total>=0?'green':'red'}">${fmt(s.total)}</span>
+        ${diffHtml}
+        <button class="snap-del" onclick="deleteSnapshot('${s.date}')">×</button>
+      </div>
+      ${details ? `<div class="snap-details">${details}</div>` : ''}`;
+  }).join('');
+}
+
+// snapshots init handled in loadState above
+</script>
+</body>
+</html>
